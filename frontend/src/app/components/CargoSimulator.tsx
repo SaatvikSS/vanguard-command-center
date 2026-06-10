@@ -14,8 +14,8 @@ export function CargoSimulatorLeftPanel({ ports, chokepoints, onSimulate, isSimu
   const [dest, setDest] = useState('rotterdam');
   const [chokepoint, setChokepoint] = useState('none');
   const [cargoValue, setCargoValue] = useState('4100000000');
-  const [fuelCost, setFuelCost] = useState('45000');
-  const [charterCost, setCharterCost] = useState('25000');
+  const [vesselType, setVesselType] = useState('ulcv_container');
+  const [commodityType, setCommodityType] = useState('electronics');
 
   const handleSimulate = async () => {
     onSimulate({
@@ -23,8 +23,8 @@ export function CargoSimulatorLeftPanel({ ports, chokepoints, onSimulate, isSimu
       destination: dest,
       blocked_chokepoint: chokepoint,
       cargo_value: parseFloat(cargoValue),
-      fuel_cost_per_day: parseFloat(fuelCost),
-      charter_cost_per_day: parseFloat(charterCost)
+      vessel_type: vesselType,
+      commodity_type: commodityType
     });
   };
 
@@ -55,19 +55,30 @@ export function CargoSimulatorLeftPanel({ ports, chokepoints, onSimulate, isSimu
         </div>
 
         <div className="space-y-3 pt-2">
-          <h3 className="text-[9px] font-black text-slate-500 tracking-widest border-b border-slate-800 pb-1">2. CARGO FINANCIALS (USD)</h3>
+          <h3 className="text-[9px] font-black text-slate-500 tracking-widest border-b border-slate-800 pb-1">2. CARGO & VESSEL TELEMETRICS</h3>
           <div>
-            <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">TOTAL GOODS VALUE</label>
+            <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">TOTAL GOODS VALUE (USD)</label>
             <input type="number" value={cargoValue} onChange={e => setCargoValue(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-[10px] text-emerald-400 font-mono" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">DAILY FUEL COST</label>
-              <input type="number" value={fuelCost} onChange={e => setFuelCost(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-[10px] text-amber-400 font-mono" />
+              <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">VESSEL CLASS</label>
+              <select value={vesselType} onChange={e => setVesselType(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-[10px] text-amber-400 font-mono">
+                <option value="ulcv_container">ULCV Container</option>
+                <option value="vlcc_tanker">VLCC Tanker</option>
+                <option value="capesize_bulk">Capesize Bulk</option>
+                <option value="lng_carrier">LNG Carrier</option>
+              </select>
             </div>
             <div>
-              <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">DAILY CHARTER RATE</label>
-              <input type="number" value={charterCost} onChange={e => setCharterCost(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-[10px] text-blue-400 font-mono" />
+              <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">COMMODITY TYPE</label>
+              <select value={commodityType} onChange={e => setCommodityType(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-[10px] text-blue-400 font-mono">
+                <option value="electronics">Electronics/Auto</option>
+                <option value="oil">Crude Oil</option>
+                <option value="lng">LNG</option>
+                <option value="food">Perishables (Food)</option>
+                <option value="bulk">Dry Bulk (Iron/Coal)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -116,7 +127,14 @@ export function CargoSimulatorRightPanel({ result }: { result: any }) {
 
   return (
     <div className="w-[360px] flex flex-col border-l border-slate-800 bg-slate-950/80 shrink-0 p-5 overflow-y-auto">
-      <h2 className="text-[11px] font-black text-orange-400 tracking-widest mb-5 flex items-center gap-2"><FileText className="w-4 h-4" /> RISK EXPOSURE REPORT</h2>
+      <div className="flex justify-between items-center mb-5">
+        <h2 className="text-[11px] font-black text-orange-400 tracking-widest flex items-center gap-2"><FileText className="w-4 h-4" /> RISK EXPOSURE REPORT</h2>
+        {result.confidence_score && (
+          <span className={`text-[8px] font-black px-2 py-0.5 rounded border tracking-widest ${result.confidence_score === 'HIGH' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-700/50' : result.confidence_score === 'MEDIUM' ? 'bg-amber-900/30 text-amber-400 border-amber-700/50' : 'bg-red-900/30 text-red-400 border-red-700/50'}`}>
+            {result.confidence_score} CONFIDENCE
+          </span>
+        )}
+      </div>
 
       {result.blocked_chokepoint === 'none' ? (
         <div className="bg-emerald-950/30 border border-emerald-900/50 rounded p-4 mb-6 relative overflow-hidden">
@@ -162,23 +180,38 @@ export function CargoSimulatorRightPanel({ result }: { result: any }) {
         </div>
 
         <div>
-          <h3 className="text-[9px] font-black text-slate-500 tracking-widest mb-2 border-b border-slate-800 pb-1">FINANCIAL BREAKDOWN</h3>
+          <h3 className="text-[9px] font-black text-slate-500 tracking-widest mb-2 border-b border-slate-800 pb-1">FINANCIAL BREAKDOWN (EXPLAINABILITY LAYER)</h3>
           <div className="space-y-2">
-            <div className="flex justify-between items-center bg-slate-900/30 p-2 rounded border border-slate-800/50">
-              <span className="text-[9px] text-slate-400 font-mono">Excess Fuel Burn</span>
-              <span className="text-[10px] font-bold text-amber-400">+{formatMoney(result.extra_fuel_cost)}</span>
+            <div className="bg-slate-900/30 p-2 rounded border border-slate-800/50">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[9px] text-slate-400 font-mono">Excess Fuel Burn</span>
+                <span className="text-[10px] font-bold text-amber-400">+{formatMoney(result.extra_fuel_cost)}</span>
+              </div>
+              <div className="text-[8px] text-slate-500 font-mono italic">{result.explainability_breakdown?.fuel_formula}</div>
             </div>
-            <div className="flex justify-between items-center bg-slate-900/30 p-2 rounded border border-slate-800/50">
-              <span className="text-[9px] text-slate-400 font-mono">Extended Charter</span>
-              <span className="text-[10px] font-bold text-blue-400">+{formatMoney(result.extra_charter_cost)}</span>
+            
+            <div className="bg-slate-900/30 p-2 rounded border border-slate-800/50">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[9px] text-slate-400 font-mono">Extended Charter</span>
+                <span className="text-[10px] font-bold text-blue-400">+{formatMoney(result.extra_charter_cost)}</span>
+              </div>
+              <div className="text-[8px] text-slate-500 font-mono italic">{result.explainability_breakdown?.charter_formula}</div>
             </div>
-            <div className="flex justify-between items-center bg-slate-900/30 p-2 rounded border border-slate-800/50">
-              <span className="text-[9px] text-slate-400 font-mono">War Risk Insurance Surge</span>
-              <span className="text-[10px] font-bold text-purple-400">+{formatMoney(result.insurance_surge)}</span>
+            
+            <div className="bg-slate-900/30 p-2 rounded border border-slate-800/50">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[9px] text-slate-400 font-mono">War Risk Insurance Surge</span>
+                <span className="text-[10px] font-bold text-purple-400">+{formatMoney(result.insurance_surge)}</span>
+              </div>
+              <div className="text-[8px] text-slate-500 font-mono italic">{result.explainability_breakdown?.insurance_formula}</div>
             </div>
-            <div className="flex justify-between items-center bg-slate-900/30 p-2 rounded border border-slate-800/50">
-              <span className="text-[9px] text-slate-400 font-mono">Goods Depreciation Penalty</span>
-              <span className="text-[10px] font-bold text-emerald-400">+{formatMoney(result.delay_penalty)}</span>
+            
+            <div className="bg-slate-900/30 p-2 rounded border border-slate-800/50">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[9px] text-slate-400 font-mono">Goods Depreciation Penalty</span>
+                <span className="text-[10px] font-bold text-emerald-400">+{formatMoney(result.delay_penalty)}</span>
+              </div>
+              <div className="text-[8px] text-slate-500 font-mono italic">{result.explainability_breakdown?.delay_formula}</div>
             </div>
           </div>
         </div>
