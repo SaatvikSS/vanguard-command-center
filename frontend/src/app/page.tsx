@@ -37,7 +37,8 @@ export default function CommandCenter() {
   // WebSocket for AI Agent logs
   useEffect(() => {
     if (!mounted) return;
-    const ws = new WebSocket('ws://localhost:8000/ws/stream');
+    const wsProtocol = API_BASE.startsWith('https') ? 'wss' : 'ws';
+    const ws = new WebSocket(`${wsProtocol}://${API_BASE.replace(/^https?:\/\//, '')}/ws/stream`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
