@@ -127,11 +127,25 @@ def routing_orchestrator_node(state: AgentState):
     
     extra_nm = detour_dist - original_dist
     if extra_nm < 0: extra_nm = 0
-    extra_days = round(extra_nm / (14 * 24))
+    extra_days = extra_nm / (14 * 24)
     
-    # 3. Calculate Financial Impact (Assume 10,000 TEU volume on route)
-    diff_cost = extra_days * 25000 + extra_days * 45000 # Charter + Fuel
-    financial_impact = f"-${(diff_cost * 1) / 1000000:.1f}M"
+    # 3. Calculate Financial Impact
+    cargo_value = 1_500_000_000
+    extra_fuel = extra_days * 120 * 600
+    extra_charter = extra_days * 45000
+    
+    high_risk_zones = {"babel", "hormuz", "black_sea"}
+    insurance_surge_rate = 0.05
+    for node in detour_route:
+        if node in high_risk_zones:
+            insurance_surge_rate = 0.15
+            break
+            
+    insurance_surge = cargo_value * (insurance_surge_rate / 100)
+    delay_penalty = cargo_value * (0.05 / 100) * extra_days
+    
+    diff_cost = extra_fuel + extra_charter + insurance_surge + delay_penalty
+    financial_impact = f"${diff_cost / 1000000:.1f}M"
     
     optimal_dict = {
         "route": detour_route,
