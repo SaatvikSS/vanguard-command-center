@@ -67,7 +67,7 @@ def threat_analyzer_node(state: AgentState):
         "status": "threat_analyzed"
     }
 
-from graph_db import SupplyChainGraph
+
 
 def routing_orchestrator_node(state: AgentState):
     """Interfaces with Neo4j to severe the compromised node and recalculate route."""
@@ -98,99 +98,51 @@ def routing_orchestrator_node(state: AgentState):
     if not node_id:
         node_id = nl.replace(" ", "_")
 
-    db = SupplyChainGraph()
-    # 1. Block the node by setting inbound edge costs to 999999
-    db.update_edge_risk(node_name, new_cost=999999)
+    import graph_db
     
     # 2. Determine which major route to reroute based on the SPECIFIC threat location
-    #    Each chokepoint has a unique origin, destination, cost, and fallback path
     detour_table = {
-        "suez": {
-            "origin": "shanghai", "dest": "rotterdam", "original_cost": 8600,
-            "fallback": ["shanghai","taiwan_strait","singapore","sunda","madagascar_east","cape","namibia_coast","west_africa","canary_islands","cape_st_vincent","gibraltar","rotterdam"],
-        },
-        "panama": {
-            "origin": "busan", "dest": "newyork", "original_cost": 6200,
-            "fallback": ["busan","tsugaru","la","manzanillo","callao","cape_horn","buenosaires","santos","newyork"],
-        },
-        "malacca": {
-            "origin": "singapore", "dest": "felixstowe", "original_cost": 5800,
-            "fallback": ["singapore","sunda","madagascar_east","cape","namibia_coast","west_africa","canary_islands","cape_st_vincent","felixstowe"],
-        },
-        "hormuz": {
-            "origin": "jebelali", "dest": "rotterdam", "original_cost": 4200,
-            "fallback": ["jebelali","colombo","madagascar_east","cape","namibia_coast","west_africa","canary_islands","cape_st_vincent","gibraltar","rotterdam"],
-        },
-        "babel": {
-            "origin": "jeddah", "dest": "genoa", "original_cost": 3800,
-            "fallback": ["jeddah","hormuz","colombo","madagascar_east","cape","namibia_coast","west_africa","canary_islands","cape_st_vincent","gibraltar","genoa"],
-        },
-        "gibraltar": {
-            "origin": "santos", "dest": "rotterdam", "original_cost": 4500,
-            "fallback": ["santos","canary_islands","cape_st_vincent","dover","rotterdam"],
-        },
-        "dover": {
-            "origin": "lehavre", "dest": "genoa", "original_cost": 2200,
-            "fallback": ["lehavre","canary_islands","cape_st_vincent","gibraltar","genoa"],
-        },
-        "taiwan_strait": {
-            "origin": "shanghai", "dest": "la", "original_cost": 3200,
-            "fallback": ["shanghai","busan","tsugaru","la"],
-        },
-        "sunda": {
-            "origin": "jakarta", "dest": "santos", "original_cost": 7200,
-            "fallback": ["jakarta","lombok","madagascar_east","cape","namibia_coast","west_africa","santos"],
-        },
-        "lombok": {
-            "origin": "melbourne", "dest": "piraeus", "original_cost": 6800,
-            "fallback": ["melbourne","sunda","singapore","malacca","colombo","babel","suez","piraeus"],
-        },
-        "tsugaru": {
-            "origin": "busan", "dest": "rotterdam", "original_cost": 4100,
-            "fallback": ["busan","taiwan_strait","singapore","malacca","colombo","babel","suez","gibraltar","cape_st_vincent","rotterdam"],
-        },
-        "cape": {
-            "origin": "jakarta", "dest": "rotterdam", "original_cost": 8200,
-            "fallback": ["jakarta","sunda","malacca","colombo","babel","suez","gibraltar","cape_st_vincent","rotterdam"],
-        },
-        "mozambique": {
-            "origin": "durban", "dest": "genoa", "original_cost": 5400,
-            "fallback": ["durban","cape","west_africa","canary_islands","cape_st_vincent","gibraltar","genoa"],
-        },
-        "danish": {
-            "origin": "hamburg", "dest": "genoa", "original_cost": 1800,
-            "fallback": ["hamburg","dover","lehavre","cape_st_vincent","gibraltar","genoa"],
-        },
+        "suez": {"origin": "shanghai", "dest": "rotterdam"},
+        "panama": {"origin": "busan", "dest": "newyork"},
+        "malacca": {"origin": "singapore", "dest": "felixstowe"},
+        "hormuz": {"origin": "jebelali", "dest": "rotterdam"},
+        "babel": {"origin": "jeddah", "dest": "genoa"},
+        "gibraltar": {"origin": "santos", "dest": "rotterdam"},
+        "dover": {"origin": "lehavre", "dest": "genoa"},
+        "taiwan_strait": {"origin": "shanghai", "dest": "la"},
+        "sunda": {"origin": "jakarta", "dest": "santos"},
+        "lombok": {"origin": "melbourne", "dest": "piraeus"},
+        "tsugaru": {"origin": "busan", "dest": "rotterdam"},
+        "cape": {"origin": "jakarta", "dest": "rotterdam"},
+        "mozambique": {"origin": "durban", "dest": "genoa"},
+        "danish": {"origin": "hamburg", "dest": "genoa"},
     }
     
     scenario = detour_table.get(node_id, detour_table["suez"])
     origin = scenario["origin"]
     dest = scenario["dest"]
-    original_cost = scenario["original_cost"]
-    fallback = scenario["fallback"]
         
-    optimal = db.calculate_optimal_route(origin, dest, blocked_node=node_id)
+    original_route, original_dist = graph_db.calculate_shortest_path_dijkstra(origin, dest, None)
+    detour_route, detour_dist = graph_db.calculate_shortest_path_dijkstra(origin, dest, node_id)
+    
+    extra_nm = detour_dist - original_dist
+    if extra_nm < 0: extra_nm = 0
+    extra_days = round(extra_nm / (14 * 24))
     
     # 3. Calculate Financial Impact (Assume 10,000 TEU volume on route)
-    new_cost = optimal["cost"] if optimal else original_cost + 3300
-    diff_cost = max(0, new_cost - original_cost)
-    financial_impact = f"-${(diff_cost * 10000) / 1000000:.1f}M"
-    
-    # Use Neo4j's route if available, otherwise use pre-calculated fallback
-    route_path = (optimal.get("route") if optimal else None) or fallback
+    diff_cost = extra_days * 25000 + extra_days * 45000 # Charter + Fuel
+    financial_impact = f"-${(diff_cost * 1) / 1000000:.1f}M"
     
     optimal_dict = {
-        "route": route_path,
-        "cost": new_cost,
+        "route": detour_route,
+        "cost": detour_dist,
         "financial_impact": financial_impact,
         "blocked_node": node_id,
         "is_detour": True # Flag to change color on frontend
     }
     
-    db.close()
-    
     return {
-        "messages": [AIMessage(content=f"Routing Agent executed Neo4j A*. Re-routed via {optimal_dict['route'][2] if len(optimal_dict['route'])>2 else 'Alternate'}. Financial Impact: {financial_impact}")],
+        "messages": [AIMessage(content=f"Routing Agent executed Haversine Dijkstra. Re-routed via {optimal_dict['route'][2] if len(optimal_dict['route'])>2 else 'Alternate'}. Financial Impact: {financial_impact}")],
         "new_route": optimal_dict,
         "status": "route_healed"
     }
