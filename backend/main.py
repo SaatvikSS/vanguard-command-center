@@ -5,6 +5,7 @@ import uvicorn
 import asyncio
 import json
 from agent import vanguard_app
+import graph_db
 
 app = FastAPI(
     title="Vanguard SCRI Command Center API",
@@ -96,131 +97,16 @@ class SimulateRequest(BaseModel):
     charter_cost_per_day: float = 25000
     insurance_rate: float = 0.05  # % of cargo value
 
-# Avg nautical miles between waypoints (rough estimates for cost calculation)
-DISTANCE_TABLE = {
-    "suez": {"normal_nm": 8400, "detour_nm": 13200, "extra_days": 12},
-    "panama": {"normal_nm": 9200, "detour_nm": 16800, "extra_days": 14},
-    "malacca": {"normal_nm": 7600, "detour_nm": 12400, "extra_days": 10},
-    "hormuz": {"normal_nm": 5800, "detour_nm": 14200, "extra_days": 18},
-    "babel": {"normal_nm": 6200, "detour_nm": 13600, "extra_days": 16},
-    "gibraltar": {"normal_nm": 4200, "detour_nm": 6800, "extra_days": 5},
-    "dover": {"normal_nm": 2200, "detour_nm": 5400, "extra_days": 6},
-    "taiwan_strait": {"normal_nm": 5400, "detour_nm": 7200, "extra_days": 4},
-    "sunda": {"normal_nm": 8800, "detour_nm": 10200, "extra_days": 3},
-    "lombok": {"normal_nm": 8200, "detour_nm": 9600, "extra_days": 3},
-    "tsugaru": {"normal_nm": 6400, "detour_nm": 11800, "extra_days": 12},
-    "cape": {"normal_nm": 11200, "detour_nm": 9400, "extra_days": -2},
-    "mozambique": {"normal_nm": 7800, "detour_nm": 11400, "extra_days": 8},
-    "danish": {"normal_nm": 1800, "detour_nm": 4600, "extra_days": 6},
-}
-
-REGION_MAP = {
-    # Asia
-    "shanghai": "east_asia", "ningbo": "east_asia", "shenzhen": "east_asia", "qingdao": "east_asia", "guangzhou": "east_asia", "tianjin": "east_asia", "dalian": "east_asia", "xiamen": "east_asia", "hong_kong": "east_asia", "kaohsiung": "east_asia", "keelung": "east_asia", "tokyo": "east_asia", "yokohama": "east_asia", "kobe": "east_asia", "nagoya": "east_asia", "busan": "east_asia", "incheon": "east_asia",
-    "singapore": "se_asia", "portklang": "se_asia", "tanjungpelepas": "se_asia", "laemchabang": "se_asia", "hochiminh": "se_asia", "haiphong": "se_asia", "manila": "se_asia", "jakarta": "se_asia", "surabaya": "se_asia",
-    "mumbai": "south_asia", "mundra": "south_asia", "chennai": "south_asia", "colombo": "south_asia", "chittagong": "south_asia", "karachi": "south_asia",
-    "jebelali": "middle_east", "salalah": "middle_east", "jeddah": "middle_east", "hamad": "middle_east", "bandarabbas": "middle_east", "djibouti": "middle_east",
-    # Europe
-    "rotterdam": "europe_north", "antwerp": "europe_north", "hamburg": "europe_north", "bremerhaven": "europe_north", "felixstowe": "europe_north", "southampton": "europe_north", "lehavre": "europe_north", "gdansk": "europe_north", "gothenburg": "europe_north", "stpetersburg": "europe_north",
-    "piraeus": "europe_south", "algeciras": "europe_south", "barcelona": "europe_south", "valencia": "europe_south", "genoa": "europe_south", "gioia_tauro": "europe_south", "tangier": "europe_south", "portSaid": "europe_south",
-    # Africa
-    "durban": "africa_south", "capetown": "africa_south", "mombasa": "africa_east", "lagos": "west_africa",
-    # Americas
-    "la": "us_west", "longbeach": "us_west", "vancouver": "us_west", "manzanillo": "us_west", "balboa": "us_west", "callao": "us_west",
-    "newyork": "us_east", "savannah": "us_east", "houston": "us_east", "charleston": "us_east", "montreal": "us_east", "colon": "us_east",
-    "santos": "south_america_east", "cartagena": "south_america_east", "buenosaires": "south_america_east",
-    # Oceania
-    "melbourne": "oceania", "sydney": "oceania", "brisbane": "oceania", "auckland": "oceania", "tauranga": "oceania",
-}
-
-GRAPH = {
-    "east_asia": ["taiwan_strait", "tsugaru", "malacca", "sunda"],
-    "se_asia": ["taiwan_strait", "malacca", "sunda", "lombok"],
-    "south_asia": ["malacca", "babel", "hormuz", "madagascar_east"],
-    "middle_east": ["hormuz", "babel"],
-    "europe_north": ["dover", "danish"],
-    "europe_south": ["gibraltar", "suez", "cape_st_vincent"],
-    "africa_east": ["babel", "madagascar_east", "mozambique"],
-    "africa_south": ["cape", "mozambique", "namibia_coast"],
-    "west_africa": ["namibia_coast", "canary_islands"],
-    "us_west": ["panama", "tsugaru"],
-    "us_east": ["panama", "canary_islands", "dover"],
-    "south_america_east": ["cape_horn", "canary_islands", "santos"],
-    "oceania": ["lombok", "cape_horn"],
-
-    "taiwan_strait": ["east_asia", "se_asia"],
-    "malacca": ["se_asia", "south_asia"],
-    "sunda": ["se_asia", "madagascar_east", "cape"],
-    "lombok": ["se_asia", "oceania"],
-    "tsugaru": ["east_asia", "us_west"],
-    
-    "hormuz": ["middle_east", "south_asia"],
-    "babel": ["middle_east", "suez", "south_asia", "africa_east"],
-    "suez": ["babel", "europe_south"],
-    
-    "madagascar_east": ["south_asia", "sunda", "africa_east", "mozambique", "cape"],
-    "mozambique": ["madagascar_east", "africa_south"],
-    "cape": ["madagascar_east", "africa_south", "namibia_coast", "cape_horn", "sunda"],
-    "namibia_coast": ["cape", "africa_south", "west_africa"],
-    "canary_islands": ["west_africa", "us_east", "south_america_east", "cape_st_vincent"],
-    
-    "cape_st_vincent": ["canary_islands", "gibraltar", "dover", "europe_south"],
-    "gibraltar": ["cape_st_vincent", "europe_south"],
-    "dover": ["cape_st_vincent", "europe_north", "us_east"],
-    "danish": ["europe_north"],
-    
-    "panama": ["us_west", "us_east"],
-    "cape_horn": ["oceania", "south_america_east", "cape"],
-}
-
-VALID_WAYPOINTS = {
-    "malacca", "suez", "panama", "hormuz", "babel", "gibraltar", "dover", "taiwan_strait",
-    "cape", "sunda", "lombok", "tsugaru", "mozambique", "danish",
-    "west_africa", "namibia_coast", "madagascar_east", "cape_horn", "canary_islands", "cape_st_vincent"
-}
-
-def calculate_shortest_path(origin, dest, blocked=None):
-    start = REGION_MAP.get(origin, origin)
-    end = REGION_MAP.get(dest, dest)
-    
-    if start == end:
-        return [origin, dest]
-        
-    queue = [[start]]
-    visited = set([start])
-    if blocked:
-        visited.add(blocked)
-        
-    while queue:
-        path = queue.pop(0)
-        node = path[-1]
-        
-        if node == end:
-            route = [origin]
-            for n in path[1:-1]:
-                if n in VALID_WAYPOINTS:
-                    route.append(n)
-            route.append(dest)
-            return route
-            
-        for neighbor in GRAPH.get(node, []):
-            if neighbor not in visited:
-                visited.add(neighbor)
-                queue.append(path + [neighbor])
-    return [origin, dest]
-
 @app.post("/api/simulate")
 async def simulate_cargo(req: SimulateRequest):
     cp = req.blocked_chokepoint
     
-    original_route = calculate_shortest_path(req.origin, req.destination, None)
+    original_route, original_dist = graph_db.calculate_shortest_path_dijkstra(req.origin, req.destination, None)
     
     if cp == "none" or cp not in original_route:
-        # Rough distance calculation just for optimal path visual context
-        normal_distance = len(original_route) * 1400  # rough estimate
         return {
             "blocked_chokepoint": cp,
-            "normal_distance_nm": normal_distance,
+            "normal_distance_nm": round(original_dist),
             "detour_distance_nm": 0,
             "extra_distance_nm": 0,
             "extra_transit_days": 0,
@@ -236,40 +122,37 @@ async def simulate_cargo(req: SimulateRequest):
             "unaffected": cp != "none"
         }
         
-    dist = DISTANCE_TABLE.get(cp, {"normal_nm": 8000, "detour_nm": 12000, "extra_days": 8})
+    detour_route, detour_dist = graph_db.calculate_shortest_path_dijkstra(req.origin, req.destination, cp)
     
-    extra_nm = dist["detour_nm"] - dist["normal_nm"]
-    extra_days = dist["extra_days"]
+    extra_nm = detour_dist - original_dist
+    if extra_nm < 0: extra_nm = 0
+    
+    knots = 14
+    nm_per_day = knots * 24
+    extra_days = round(extra_nm / nm_per_day)
+    
     extra_fuel = extra_days * req.fuel_cost_per_day
     extra_charter = extra_days * req.charter_cost_per_day
     
-    # Insurance surges during crises (war risk premium goes from 0.05% to ~0.5%)
-    insurance_surge_rate = 0.45  # percentage points increase
+    insurance_surge_rate = 0.45 
     insurance_surge = req.cargo_value * (insurance_surge_rate / 100)
     
-    # Goods delay penalty (typically 0.1-0.5% of cargo value per day)
-    delay_penalty_rate = 0.15  # % per day
+    delay_penalty_rate = 0.15 
     delay_penalty = req.cargo_value * (delay_penalty_rate / 100) * extra_days
     
     total_damage = extra_fuel + extra_charter + insurance_surge + delay_penalty
     
-    detour_route = calculate_shortest_path(req.origin, req.destination, cp)
-    
-    # Generate dynamic AI mitigations based on extra days and distance
     ai_mitigations = []
     
-    # Strategy 1: Modal Shift if delay is severe
-    if extra_days > 7:
-        air_shift_cost = req.cargo_value * 0.002 # 0.2% cost premium
-        if air_shift_cost < delay_penalty:
-            ai_mitigations.append({
-                "strategy": "Intermodal Air Freight Shift",
-                "description": "Shift top 15% tier of high-value cargo to air freight via regional hub prior to blockade zone.",
-                "time_impact": f"-{extra_days - 2} Days",
-                "cost_impact": f"+${air_shift_cost:,.0f}"
-            })
+    if extra_days > 5 and req.cargo_value > 50_000_000:
+        air_freight_premium = 1_200_000 
+        ai_mitigations.append({
+            "strategy": "Intermodal Air Freight Shift",
+            "description": f"Divert top 15% tier of high-value, time-sensitive cargo to nearest regional air hub.",
+            "time_impact": f"-{extra_days - 2} Days",
+            "cost_impact": f"+${air_freight_premium:,.0f}"
+        })
             
-    # Strategy 2: Speed Optimization (Slow Steaming Reverse)
     speed_fuel_penalty = extra_fuel * 0.4
     ai_mitigations.append({
         "strategy": "Vessel Speed Optimization",
@@ -278,7 +161,6 @@ async def simulate_cargo(req: SimulateRequest):
         "cost_impact": f"+${speed_fuel_penalty:,.0f}"
     })
     
-    # Strategy 3: Insurance / Contractual
     ai_mitigations.append({
         "strategy": "Force Majeure Declaration",
         "description": "Execute automated smart contract force majeure clauses to pause daily charter rate penalties.",
@@ -288,9 +170,9 @@ async def simulate_cargo(req: SimulateRequest):
     
     return {
         "blocked_chokepoint": cp,
-        "normal_distance_nm": dist["normal_nm"],
-        "detour_distance_nm": dist["detour_nm"],
-        "extra_distance_nm": extra_nm,
+        "normal_distance_nm": round(original_dist),
+        "detour_distance_nm": round(detour_dist),
+        "extra_distance_nm": round(extra_nm),
         "extra_transit_days": extra_days,
         "extra_fuel_cost": round(extra_fuel),
         "extra_charter_cost": round(extra_charter),
@@ -323,18 +205,8 @@ async def wargame(req: WargameRequest):
     }
     
     for cp in req.blocked_chokepoints:
-        dist = DISTANCE_TABLE.get(cp, {"normal_nm": 8000, "detour_nm": 12000, "extra_days": 8})
         share = trade_share.get(cp, 3)
         affected_value = req.cargo_value * (share / 100)
-        
-        extra_days = dist["extra_days"]
-        extra_fuel = extra_days * 45000 * 500  # 500 ships per day rerouted
-        insurance_surge = affected_value * 0.045  # Massive global spike
-        delay_penalty = affected_value * 0.015 * extra_days
-        damage = extra_fuel + insurance_surge + delay_penalty
-        
-        total_global_damage += damage
-        affected_routes_count += share
         
         # Determine a typical major route affected by this chokepoint to draw a detour
         major_routes = {
@@ -354,7 +226,21 @@ async def wargame(req: WargameRequest):
             "danish": ("hamburg", "genoa"),
         }
         origin, dest = major_routes.get(cp, ("shanghai", "rotterdam"))
-        detour_route = calculate_shortest_path(origin, dest, cp)
+        
+        _, original_dist = graph_db.calculate_shortest_path_dijkstra(origin, dest, None)
+        detour_route, detour_dist = graph_db.calculate_shortest_path_dijkstra(origin, dest, cp)
+        
+        extra_nm = detour_dist - original_dist
+        if extra_nm < 0: extra_nm = 0
+        extra_days = round(extra_nm / (14 * 24))
+        
+        extra_fuel = extra_days * 45000 * 500  # 500 ships per day rerouted
+        insurance_surge = affected_value * 0.045  # Massive global spike
+        delay_penalty = affected_value * 0.015 * extra_days
+        damage = extra_fuel + insurance_surge + delay_penalty
+        
+        total_global_damage += damage
+        affected_routes_count += share
         
         results.append({
             "chokepoint": cp,
