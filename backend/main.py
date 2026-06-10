@@ -60,7 +60,7 @@ async def run_agent_swarm(alert: ThreatAlert):
             })
             for connection in active_connections:
                 await connection.send_text(payload)
-            await asyncio.sleep(1) # Artificial delay for cinematic UI effect
+            await asyncio.sleep(1) # Buffer for sequential agent state processing
             
             if "new_route" in value and value["new_route"]:
                 route_payload = json.dumps({
@@ -96,7 +96,8 @@ VESSEL_MODELS = {
 }
 
 COMMODITY_MODELS = {
-    "electronics": {"delay_decay_pct": 0.25},
+    "electronics": {"delay_decay_pct": 0.05},
+    "electronics_auto": {"delay_decay_pct": 0.05},
     "automotive": {"delay_decay_pct": 0.20},
     "oil": {"delay_decay_pct": 0.05},
     "lng": {"delay_decay_pct": 0.08},
@@ -125,7 +126,8 @@ async def simulate_cargo(req: SimulateRequest):
     original_route, original_dist = graph_db.calculate_shortest_path_dijkstra(req.origin, req.destination, None, use_risk=True)
     
     vessel = VESSEL_MODELS.get(req.vessel_type, VESSEL_MODELS["ulcv_container"])
-    commodity = COMMODITY_MODELS.get(req.commodity_type, COMMODITY_MODELS["electronics"])
+    commodity_key = req.commodity_type.lower().replace("/", "_").replace(" ", "_")
+    commodity = COMMODITY_MODELS.get(commodity_key, COMMODITY_MODELS["electronics"])
     
     if cp == "none" or cp not in original_route:
         # High confidence because standard route applies
@@ -158,7 +160,9 @@ async def simulate_cargo(req: SimulateRequest):
     detour_route, detour_dist = graph_db.calculate_shortest_path_dijkstra(req.origin, req.destination, cp, use_risk=True)
     
     extra_nm = detour_dist - original_dist
-    if extra_nm < 0: extra_nm = 0
+    if extra_nm < 0:
+        print(f"[WARNING] Negative extra distance detected for {req.origin} -> {req.destination} with blockade {cp}. Defaulting to 0.")
+        extra_nm = 0
     
     knots = vessel["speed"]
     nm_per_day = knots * 24
@@ -170,10 +174,10 @@ async def simulate_cargo(req: SimulateRequest):
     # Dynamic Insurance Surge
     # If the detour forces the ship into high-risk zones, increase insurance
     high_risk_zones = {"babel", "hormuz", "black_sea"}
-    insurance_surge_rate = 0.15  # Base detour surge
+    insurance_surge_rate = 0.05  # Standard detour base rate
     for node in detour_route:
         if node in high_risk_zones:
-            insurance_surge_rate += 0.30
+            insurance_surge_rate = 0.15
             break
             
     insurance_surge = req.cargo_value * (insurance_surge_rate / 100)
