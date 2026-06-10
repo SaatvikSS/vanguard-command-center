@@ -28,6 +28,15 @@ export function CargoSimulatorLeftPanel({ ports, chokepoints, onSimulate, isSimu
     });
   };
 
+  const formatAbbreviatedValue = (valStr: string) => {
+    const val = parseFloat(valStr);
+    if (isNaN(val)) return "$0";
+    if (val >= 1000000000) return `$${(val / 1000000000).toFixed(1).replace(/\.0$/, '')}B`;
+    if (val >= 1000000) return `$${(val / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (val >= 1000) return `$${(val / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+    return `$${val}`;
+  };
+
   return (
     <div className="w-[400px] flex flex-col border-r border-slate-800 bg-slate-950/80 shrink-0 h-full">
       <div className="p-4 border-b border-slate-800 bg-blue-950/20">
@@ -57,7 +66,10 @@ export function CargoSimulatorLeftPanel({ ports, chokepoints, onSimulate, isSimu
         <div className="space-y-3 pt-2">
           <h3 className="text-[9px] font-black text-slate-500 tracking-widest border-b border-slate-800 pb-1">2. CARGO & VESSEL TELEMETRICS</h3>
           <div>
-            <label className="text-[8px] text-slate-400 font-bold tracking-widest block mb-1">TOTAL GOODS VALUE (USD)</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-[8px] text-slate-400 font-bold tracking-widest">TOTAL GOODS VALUE (USD)</label>
+              <span className="text-[9px] font-black text-emerald-500 tracking-widest">{formatAbbreviatedValue(cargoValue)}</span>
+            </div>
             <input type="number" value={cargoValue} onChange={e => setCargoValue(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-[10px] text-emerald-400 font-mono" />
           </div>
           <div className="grid grid-cols-2 gap-3">

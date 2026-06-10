@@ -1,5 +1,5 @@
 // VANGUARD SCRI: Complete Global Maritime Database
-// 100+ ports, all chokepoints, organized geographically with real lat/lon
+// 80+ ports, all chokepoints, organized geographically with real lat/lon
 
 // [id, name, country, lat, lon, throughput_M_TEU, congestion%, vessels, waitHrs]
 export const PORT_DATA: [string,string,string,number,number,number,number,number,number][] = [

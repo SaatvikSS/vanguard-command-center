@@ -23,6 +23,7 @@ export default function CommandCenter() {
   const [liveNews, setLiveNews] = useState<any[]>([]);
   const [aisData, setAisData] = useState<any[]>([]);
   const [compromised, setCompromised] = useState<string[]>([]);
+  const [customThreat, setCustomThreat] = useState("");
   const [ports, setPorts] = useState(PORT_DATA);
   const [chokepoints, setChokepoints] = useState(CHOKEPOINTS);
   const [routes, setRoutes] = useState<any[]>(GLOBAL_ROUTES);
@@ -139,10 +140,11 @@ export default function CommandCenter() {
     setStatus('ANALYZING THREAT...');
     setSimulating(true);
     setLogs([]);
-    const desc = dataMode === 'LIVE' && liveNews.length > 0 ? liveNews[0].title : "Naval blockade in Strait of Malacca blocking commercial shipping.";
+    setBriefing(null);
+    const desc = customThreat.trim() !== "" ? customThreat : (dataMode === 'LIVE' && liveNews.length > 0 ? liveNews[0].title : "Naval blockade in Strait of Malacca blocking commercial shipping.");
     await fetch(`${API_BASE}/api/threat/ingest`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event_id: "INTEL-0824", location: "Strait of Malacca", severity: 10, description: desc })
+      body: JSON.stringify({ event_id: "INTEL-0824", location: "Global", severity: 10, description: desc })
     }).catch(() => { setSimulating(false); });
   };
 
@@ -238,7 +240,16 @@ export default function CommandCenter() {
                   <h2 className="text-[11px] font-black text-slate-400 tracking-widest">MISSION CONTROL</h2>
                   <div className={`px-2 py-0.5 rounded text-[9px] font-bold ${status.includes('SECURE') || status.includes('RESTORED') ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse'}`}>{status}</div>
                 </div>
-                <button onClick={triggerCrisis} className="w-full py-3 bg-red-600 hover:bg-red-500 transition rounded font-black tracking-widest text-sm border border-red-400 uppercase">TRIGGER CRISIS PROTOCOL</button>
+                <div className="space-y-2 mb-2">
+                  <input 
+                    type="text" 
+                    placeholder="Enter custom threat description..." 
+                    value={customThreat} 
+                    onChange={e => setCustomThreat(e.target.value)} 
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-[11px] text-white placeholder-slate-500"
+                  />
+                  <button onClick={triggerCrisis} className="w-full py-2 bg-red-600 hover:bg-red-500 transition rounded font-black tracking-widest text-sm border border-red-400 uppercase">DEPLOY AI SWARM</button>
+                </div>
               </div>
 
               <div className="flex-1 min-h-0 flex flex-col border-b border-slate-800">
@@ -293,6 +304,11 @@ export default function CommandCenter() {
                       <span className="text-slate-400 ml-2">{l.message}</span>
                     </motion.div>
                   ))}
+                  {briefing && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-2 p-3 bg-slate-900 border border-slate-700 rounded text-slate-300 font-mono text-[9px] whitespace-pre-wrap">
+                      {briefing}
+                    </motion.div>
+                  )}
                 </div>
               </div>
             </div>
